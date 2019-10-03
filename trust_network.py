@@ -21,6 +21,7 @@ def choose_random_pairings(nodes):
   return pairings
 
 def most_trusted_pairings(nodes):
+  # Todo
   return
 
 # play games
@@ -47,8 +48,11 @@ def history_based(moves, edge, result_matrix):
   mid_result = result_matrix['cd'][0] + result_matrix['cd'][1]
   max_sum = edge['games'] * max_result
   mid_sum = edge['games'] * mid_result
+  edge_sum = 0
+  for k in edge['sums']:
+    edge_sum += edge['sums'][k]
   # if on average they're cooperating, cooperate
-  if (edge['sum'] / max_sum) > (mid_sum / max_sum):
+  if (edge_sum / max_sum) > (mid_sum / max_sum):
     return 'c'
   # if on average they're defecting, defect
   else:
@@ -68,16 +72,25 @@ def new_edge_weights(PD, pairings, network):
   max_result_sum = PD['max_result_sum']
   for pair in pairings:
     if [pair[0], pair[1]] not in network.edges:
-      network.add_edge(pair[0], pair[1], games=0, sum=0, weight=0)
+      network.add_edge(
+        pair[0], 
+        pair[1], 
+        games=0, 
+        sums={
+          pair[0]: 0,
+          pair[1]: 0
+        }, 
+        weight=0
+      )
     edge = network[pair[0]][pair[1]]
     node_0 = network.nodes[pair[0]]
     node_1 = network.nodes[pair[1]]
     result = play_function(node_0, node_1, moves, edge, result_matrix)
-    result_sum = result[0] + result[1]
     edge['games'] += 1
-    edge['sum'] += result_sum
+    edge['sums'][pair[0]] += result[0]
+    edge['sums'][pair[1]] += result[1]
     edge['weight'] = round((
-      edge['sum'] 
+      (edge['sums'][pair[0]] + edge['sums'][pair[1]])
       / (max_result_sum * edge['games'] * 1.1**edge['games'])
     ), 4)
   return network
@@ -102,6 +115,12 @@ strategies = [
   always_coop,
   always_defect
 ]
+strategy_names = [
+  # 'random_move',
+  'history_based',
+  'always_coop',
+  'always_defect'
+]
 
 # graph with nodes
 network = nx.Graph()
@@ -114,7 +133,9 @@ for n in network.nodes:
     if i != n:
       initial_trusts[i] = 0
   network.nodes[n]['trusts'] = initial_trusts
-  network.nodes[n]['strategy'] = strategies[random.randint(0, len(strategies)-1)]
+  index = random.randint(0, len(strategies)-1)
+  network.nodes[n]['strategy'] = strategies[index]
+  network.nodes[n]['strategy_name'] = strategy_names[index]
   
   ### future/optional ###
     # nodes each choose an initial set of trusted nodes, 
@@ -232,12 +253,38 @@ max_total_result = 0
 for g in graph.edges.data('games'):
   max_total_result += g[2] * max_result_sum
 total_result = 0
-for s in graph.edges.data('sum'):
-  total_result += s[2]
+for s in graph.edges.data('sums'):
+  total_result += s[2][s[0]] + s[2][s[1]]
+
+# Group by strategy
+# this is not legit right now, because it's only looking at the total outcome 
+# for each game, rather than the outcome for each side
+# and we have no way to look at what happened in each side right now
+nodes_by_strat = {}
+strategies = []
+for n in range(len(graph.nodes)):
+  strategy = graph.nodes.data('strategy_name')[n]
+  if strategy not in nodes_by_strat:
+    nodes_by_strat[strategy] = []
+    strategies.append(strategy)
+  nodes_by_strat[strategy].append(n)
+returns_by_strat = {}
+for s in strategies:
+  returns_by_strat[s] = { 'sum': 0, 'games': 0, 'results': {} }
+  for n in nodes_by_strat[s]:
+    for k in graph[n]:
+      returns_by_strat[s]['sum'] += graph[n][k]['sums'][n]
+      returns_by_strat[s]['games'] += graph[n][k]['games']
+
 
 ### PLOT RESULTS ###
-print('Sums', graph.edges.data('sum'))
-print('Weight ratio', total_result, '/', max_total_result, '=', total_result/max_total_result)
+print('Overall weight ratio:')
+print('---', total_result, '/', max_total_result, '=', total_result/max_total_result)
+print('Returns by strat:')
+for k in returns_by_strat:
+  num = returns_by_strat[k]['sum']
+  denom = returns_by_strat[k]['games'] * 3
+  print('---', k, ':', num, '/', denom, '=', num/denom)
 # nx.draw_kamada_kawai(graph)
 # plt.show()
 
@@ -258,5 +305,6 @@ print('Weight ratio', total_result, '/', max_total_result, '=', total_result/max
 
   # Check the average return for each node's games and average by their strategy
     # which strategy leads to the highest average return?
+    # Todo
 
   
