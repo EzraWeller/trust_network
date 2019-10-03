@@ -96,19 +96,20 @@ def new_edge_weights(PD, pairings, network):
   return network
 
 ### GLOBAL VARIABLES ###
-iterations = 10
+iterations = 100
 starting_nodes = 10
 
 ### INITIALIZE STATE VARIABLES ###
 # prisoner's dilemma config
 moves = ('c', 'd')
 result_matrix = {
-  'cc': [2, 2],
-  'cd': [0, 3],
-  'dc': [3, 0],
+  'cc': [3, 3],
+  'cd': [0, 4],
+  'dc': [4, 0],
   'dd': [1, 1]
 }
-max_result_sum = 4
+max_result_sum = result_matrix['cc'][0] + result_matrix['cc'][1]
+max_individual_result = result_matrix['dc'][0]
 strategies = [
   # random_move,
   history_based,
@@ -212,6 +213,16 @@ partial_state_update_blocks = [
       'network': update_trusts
     }
   }
+  #########
+  # block 3: update success by strategy, update strategies
+  # {
+  #   'policies': {
+  #     'action': success_by_strategy
+  #   },
+  #   'variables': {
+  #     'network': update_strategies
+  #   }
+  # }
 ]
 
 ### SIMULATION PARAMS ###
@@ -283,7 +294,7 @@ print('---', total_result, '/', max_total_result, '=', total_result/max_total_re
 print('Returns by strat:')
 for k in returns_by_strat:
   num = returns_by_strat[k]['sum']
-  denom = returns_by_strat[k]['games'] * 3
+  denom = returns_by_strat[k]['games'] * max_individual_result
   print('---', k, ':', num, '/', denom, '=', num/denom)
 # nx.draw_kamada_kawai(graph)
 # plt.show()
