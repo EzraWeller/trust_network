@@ -20,11 +20,45 @@ def choose_random_pairings(nodes):
       pairings.append((nodeList[i], nodeList[i+1]))
   return pairings
 
+def most_trusted_pairings(nodes):
+  return
+
 # play games
-def play_with_random_strategies(moves, result_matrix, nodePair):
+def play_with_random_strategies(node_0, node_1, moves, edge, result_matrix):
   move_0 = moves[random.randint(0,1)]
   move_1 = moves[random.randint(0,1)]
   return result_matrix[move_0 + move_1]
+
+def play_with_node_strategies(node_0, node_1, moves, edge, result_matrix):
+  # use the node's individual strategies
+  move_0 = node_0['strategy'](moves, edge, result_matrix)
+  move_1 = node_1['strategy'](moves, edge, result_matrix)
+  return result_matrix[move_0 + move_1]
+  
+# strategies
+def random_move(moves, edge, result_matrix):
+  return moves[random.randint(0,1)]
+
+def history_based(moves, edge, result_matrix):
+  # if they haven't played, default to cooperate
+  if edge['games'] == 0:
+    return 'c'
+  max_result = result_matrix['cc'][0] + result_matrix['cc'][1]
+  mid_result = result_matrix['cd'][0] + result_matrix['cd'][1]
+  max_sum = edge['games'] * max_result
+  mid_sum = edge['games'] * mid_result
+  # if on average they're cooperating, cooperate
+  if (edge['sum'] / max_sum) > (mid_sum / max_sum):
+    return 'c'
+  # if on average they're defecting, defect
+  else:
+    return 'd'
+
+def always_defect(moves, edge, result_matrix):
+  return 'd'
+
+def always_coop(moves, edge, result_matrix):
+  return 'c'
 
 # find new edge weights (create edge if doesn't exist)
 def new_edge_weights(PD, pairings, network):
@@ -33,16 +67,18 @@ def new_edge_weights(PD, pairings, network):
   play_function = PD['play_function']
   max_result_sum = PD['max_result_sum']
   for pair in pairings:
-    result = play_function(moves, result_matrix, pair)
-    result_sum = result[0] + result[1]
     if [pair[0], pair[1]] not in network.edges:
       network.add_edge(pair[0], pair[1], games=0, sum=0, weight=0)
-    network[pair[0]][pair[1]]['games'] += 1
-    network[pair[0]][pair[1]]['sum'] += result_sum
-    network[pair[0]][pair[1]]['weight'] = round((
-      network[pair[0]][pair[1]]['sum'] / 
-      (max_result_sum * network[pair[0]][pair[1]]['games']
-      * 1.1**network[pair[0]][pair[1]]['games'])
+    edge = network[pair[0]][pair[1]]
+    node_0 = network.nodes[pair[0]]
+    node_1 = network.nodes[pair[1]]
+    result = play_function(node_0, node_1, moves, edge, result_matrix)
+    result_sum = result[0] + result[1]
+    edge['games'] += 1
+    edge['sum'] += result_sum
+    edge['weight'] = round((
+      edge['sum'] 
+      / (max_result_sum * edge['games'] * 1.1**edge['games'])
     ), 4)
   return network
 
@@ -60,6 +96,12 @@ result_matrix = {
   'dd': [1, 1]
 }
 max_result_sum = 4
+strategies = [
+  # random_move,
+  history_based,
+  always_coop,
+  always_defect
+]
 
 # graph with nodes
 network = nx.Graph()
@@ -72,6 +114,7 @@ for n in network.nodes:
     if i != n:
       initial_trusts[i] = 0
   network.nodes[n]['trusts'] = initial_trusts
+  network.nodes[n]['strategy'] = strategies[random.randint(0, len(strategies)-1)]
   
   ### future/optional ###
     # nodes each choose an initial set of trusted nodes, 
@@ -160,7 +203,7 @@ simulation_parameters = {
       'result_matrix': result_matrix,
       'max_result_sum': max_result_sum,
       'matchmaking_function': choose_random_pairings,
-      'play_function': play_with_random_strategies
+      'play_function': play_with_node_strategies
     },
     'trust': {
       'weight_function': new_edge_weights,
@@ -212,5 +255,8 @@ print('Weight ratio', total_result, '/', max_total_result, '=', total_result/max
       # players played nash perfectly
 
   # Maximize the median return on a game?
+
+  # Check the average return for each node's games and average by their strategy
+    # which strategy leads to the highest average return?
 
   
