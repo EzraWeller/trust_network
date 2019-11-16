@@ -17,7 +17,7 @@ result_matrix = {
 }
 
 repeat_game_decay = 0.1
-path_length_decay = 0.3
+path_length_decay = 0.2
 
   # Helper functions
   #
@@ -52,7 +52,7 @@ def best_path_value(path_type, value_function, network, PD, source, target, wors
       return a < b
     return a > b
 
-  best_value = (0,0)
+  best_value = (0,0, {})
 
   current_node = source
   unvisited_nodes = []
@@ -91,7 +91,11 @@ def best_path_value(path_type, value_function, network, PD, source, target, wors
     unvisited_nodes.pop(unvisited_nodes.index(current_node))
 
     if target not in unvisited_nodes:
-      best_value = (round(paths[target][path_type], 2), round(paths[target]['tentative_weight'], 2))
+      best_value = (
+        round(paths[target][path_type], 2), 
+        round(paths[target]['tentative_weight'], 2),
+        paths[target]
+      )
       searching = False
     else: 
       next_best_trust = -1
@@ -104,6 +108,7 @@ def best_path_value(path_type, value_function, network, PD, source, target, wors
       if next_best_trust == -1 or next_best_trust == 1000000:
         searching = False
 
+  # print(source, target, paths[target])
   return best_value
 
   # Strategy choice functions
@@ -130,6 +135,19 @@ def always_c(network):
 
 def always_d(network):
   return 'd'
+
+  # Friends functions
+  #
+def test_friends(network, PD, node):
+  return node
+
+def trusted_friends(network, PD, node):
+  friends = []
+  for potential_friend in network.nodes:
+    if (potential_friend != node and 
+    true_trust_score(network, PD, node, potential_friend)['rate'] == 1.0):
+      friends.append(potential_friend)
+  return friends
 
   # Pairing functions
   #
@@ -202,10 +220,42 @@ def strongest_path_trust(network, PD, source, target):
   trust = best_path_value('trust_rate', find_trust_rate, network, PD, source, target)
   return { 'cumulative': trust[1], 'rate': trust[0] }
 
-# def strongest_path_through_friends()
-  # for each friend
-    # find the strongest path to the friend, then from the friend to the target
-  # take the strongest of those paths
+def strongest_path_through_friends(network, PD, source, target):
+  friends = network.nodes[source]['friends']
+
+  if len(friends) == 0:
+    return strongest_path_trust(network, PD, source, target)
+
+  best_friend_path = { 'cumulative': -1, 'rate': -1 }
+  best_path_1 = {}
+  best_path_2 = {}
+  best_friend = 0
+
+  for friend in friends:
+    path_1 = best_path_value('trust_rate', find_trust_rate, network, PD, source, friend)[2]
+    path_2 = best_path_value('trust_rate', find_trust_rate, network, PD, friend, target)[2]
+
+    if bool(path_1) == True and bool(path_2) == True:
+      weight = path_1['weight'] + path_2['weight']
+      max_weight = path_1['max_weight'] + path_2['max_weight']
+      min_weight = path_1['min_weight'] + path_2['min_weight']
+
+      distance = len(path_1['nodes']) + len(path_2['nodes']) - 1
+      trust_weight = weight / distance * (1 - path_length_decay)**(distance - 1)
+      trust_rate = (weight - min_weight) / (max_weight - min_weight) * (1 - path_length_decay)**(distance - 1)
+
+      if trust_rate > best_friend_path['rate']:
+        best_friend_path['cumulative'] = trust_weight
+        best_friend_path['rate'] = trust_rate
+        best_path_1 = path_1
+        best_path_2 = path_2
+        best_friend = friend
+
+  if best_friend_path['rate'] == -1:
+    return strongest_path_trust(network, PD, source, target)
+
+  print('PATHS THROUGH FRIEND', source, best_friend, target, best_path_1, best_path_2)
+  return best_friend_path
 
 def best_and_worst_trust(network, PD, source, target):
   best_trust = best_path_value('trust_rate', find_trust_rate, network, PD, source, target)
@@ -243,6 +293,10 @@ class TrustNetwork:
     for n in self.network.nodes:
       self.network.nodes[n]['strategy'] = strategy_choice_function(self.network, n)
   
+  def set_friends(self, friends_function):
+    for n in self.network.nodes:
+      self.network.nodes[n]['friends'] = friends_function(self.network, self.PD, n)
+
   def set_pairings(self, pairing_function):
     self.pairings = pairing_function(self.network)
 
@@ -280,11 +334,13 @@ class TrustNetwork:
     self, 
     rounds, 
     strategy_choice_function, 
+    friends_function,
     pairing_function,
     trust_score_function
   ):
     for r in range(rounds):
       self.set_strategies(strategy_choice_function)
+      self.set_friends(friends_function)
       self.set_pairings(pairing_function)
       self.play_round()
       self.set_trust_scores(trust_score_function)
@@ -362,15 +418,17 @@ def ordered_trusts(trusts, node):
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # Run sims
 #
-tn = TrustNetwork(10, result_matrix)
+tn = TrustNetwork(50, result_matrix)
 tn.play_rounds(
-  2,
+  5,
   even_split,
+  trusted_friends,
   random_pairs,
   strongest_path_trust
 )
 found_trusts = tn.network.nodes.data('trusts')
 true_trusts = true_trust_scores(tn.network, tn.PD)
+print('friends', tn.network.nodes.data('friends'))
 print('found trusts', ordered_trusts(found_trusts[0], 0))
 print('true trusts', ordered_trusts(true_trusts[0][1], 0))
 differences = compare_trust_scores(found_trusts, true_trusts)
